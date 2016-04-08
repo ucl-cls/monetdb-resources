@@ -1,0 +1,374 @@
+program
+c
+c  This program loops though all variables in all records in a database and produces a report listing all combinations
+c   of missing values and how many variables have a particular combination of missing values.  Output is in file
+c   MISSVALS.REP in the same folder as the current database
+c
+c -----------------------------------------------------------------------------
+c 
+c TO DO 
+c 
+c a. Cleaning up ' does not work - it only does the first instance
+c b. export using pipes works -- BUT -- if the last column is empty - then MonetDB 
+c    import breaks as NULL = '' which the terminatomg EOL \n splats
+c c. Where there is a missing value declared but NO LABEL this breaks as we loop
+c    over the Labels - looping over the values might be a better idea
+c d. Write out var docs to a notes field
+c e.  Production of the retrievals should be integrated into the program 
+c -----------------------------------------------------------------------------
+
+global NSLOTS=2500
+
+STRING*100 DSNVAROUT
+STRING*100 DSNVAROUT2
+STRING*100 DSNVAROUT3
+STRING*100 DSNVAROUT4
+STRING*20 ARRAY avar (<NSLOTS>)
+INTEGER*2 ARRAY arec (<NSLOTS>) 
+STRING*20 ARRAY dvar (<NSLOTS>)
+STRING*20 tvartype 
+STRING*32 RNAME 
+STRING*32 mRNAME 
+STRING*20 ARRAY tvar (<NSLOTS>)
+INTEGER*2 SKIPFLAG
+string*300 wrstring
+string*300 wrstring2
+string*4090 wrstring3
+string*4090 wrstring3a
+string*4090 wrstring3b
+string*4090 wrstring3t
+string*4090 wrstring3ta
+string*4090 wrstring4
+string*4090 jsondata
+STRING*32 primary 
+STRING*32 secondary
+string*32 itemname
+string*120 displaylabel
+string*120 missingvalues
+string*120 category
+string*250 note
+string*250 sourceqstn
+string*250 qstlit
+string*250 qstcat
+string*250 qstvar
+string*3200 categoryindex
+string*3200 categorylabel
+
+string*3   stbracket
+string*3   endbracket
+string*3   quote
+string*3   colon
+string*3   comma
+string*32  jitemname
+string*120 jdisplaylabel
+string*120 jmissingvalues
+string*120 jcategory
+string*250 jnote
+string*250 jsourceqstn
+string*3200 jcategoryindex
+string*3200 jcategorylabel
+
+stbracket=' { '
+endbracket=' } '
+quote='"'
+colon=' : '
+comma=","
+
+c -----------------------------------------------------------------------------
+c Pathing should be set with a global in in parameter
+c -----------------------------------------------------------------------------
+
+DSNVAROUT='G:\DB\admin\sir\monetdb\' + TRIMLR(dbname(0)) + '\schema_data.sql'
+DSNVAROUT2='G:\DB\admin\sir\monetdb\' + TRIMLR(dbname(0)) + '\schema_metadata.sql'
+DSNVAROUT3='G:\DB\admin\sir\monetdb\' + TRIMLR(dbname(0)) + '\metadata.sql'
+DSNVAROUT4='G:\DB\admin\sir\monetdb\' + TRIMLR(dbname(0)) + '\add_data.sql'
+
+WRITE DSNVAROUT
+OPEN OUTFILE DSNVAR=DSNVAROUT WRITE LRECL=2000 IOSTAT=RC
+IFNOT (RC EQ 0) write "Problem opening data schema file"; exit program
+
+WRITE DSNVAROUT2
+OPEN OUTFILE2 DSNVAR=DSNVAROUT2 WRITE LRECL=2000 IOSTAT=RC
+IFNOT (RC EQ 0) write "Problem opening metadata schema file"; exit program
+
+
+WRITE DSNVAROUT3
+OPEN OUTFILE3 DSNVAR=DSNVAROUT3 WRITE LRECL=8000 IOSTAT=RC
+IFNOT (RC EQ 0) write "Problem opening json documents file"; exit program
+
+WRITE DSNVAROUT4
+OPEN OUTFILE4 DSNVAR=DSNVAROUT4 WRITE LRECL=8000 IOSTAT=RC
+IFNOT (RC EQ 0) write "Problem opening add data file"; exit program
+
+
+. FOR NREC=1,NRECS(0)
+c  select records where variables have been defined
+.   IFTHEN(NVARS(NREC)>0)
+c   set skipflag to 0, if any errors, set to 1 and do not write out schema
+.    COMPUTE SKIPFLAG=0
+
+c    schema_data.sql
+.    rname = LOWER(RECNAME(NREC))
+
+c    schema_metadata.sql
+.    mrname = "m_"+LOWER(RECNAME(NREC))
+C .    write "Record " NREC RNAME " being processed."
+
+c    schema_data.sql
+.    primary=keyname(nrec,1)
+
+c -----------------------------------------------------------------------------
+c    This could be done more elegantly
+c -----------------------------------------------------------------------------
+
+.    IFTHEN(primary="FAMSRNO")
+.      primary=' "famsrno" CHAR(7),'
+.    ELSEIF(primary="AKEY")
+.      primary=' "akey" CHAR(7),'
+.    ELSEIF(primary="SERIAL")
+.      primary=' "serial" CHAR(7),'
+.    ELSE
+.      WRITE "***************no caseid found***********"
+.    ENDIF
+
+c    schema_data.sql
+.    wrstring='CREATE TABLE "'+rname+'" ('    
+.    write (OUTFILE) wrstring
+.    write (OUTFILE) primary
+
+c    schema_metadata.sql
+.    wrstring2='CREATE TABLE "'+mrname+'" ('    
+.    write (OUTFILE2) wrstring2
+
+c    metadata.sql
+.    wrstring3='INSERT INTO "'+mrname+'" VALUES ('    
+.    write (OUTFILE3) wrstring3
+
+.    secondary=""
+.    FOR i=2,5
+.     y=""
+.     y=keyname(NREC,i)
+.     IF (EXISTS(y)=1) secondary=secondary+', '+'"'+y+'"'
+.    END FOR
+
+.    FOR NVAR=1, NVARS(NREC)
+c     schema_data.sql
+.      compute avar(nrec)=LOWER(trimrl(VARNAME(NREC,NVAR)))
+.      compute tvar(nrec)=trimrl(VFORMAT(NREC,AVAR(NREC)))
+.      COMPUTE vartype=""
+.      IFTHEN (tvar(nrec)="I1") 
+.        tvartype ="tinyint" 
+.       ELSEIF (tvar(nrec)="I2") 
+.        tvartype ="smallint" 
+.       ELSEIF (tvar(nrec)="I4") 
+.        tvartype ="int" 
+.       ELSEIF (tvar(nrec)="I9") 
+.        tvartype ="bigint" 
+.       ELSEIF (SUBSTR(tvar(nrec),1,1)="A") 
+.        compute x= SUBSTR(tvar(nrec),2,10)
+.        tvartype ="varchar"+"("+X+")"
+.       ELSEIF (SUBSTR(tvar(nrec),1,1)="F") 
+.        compute x= SUBSTR(tvar(nrec),2,10)
+.        COMPUTE x=reverse(x)
+.        tvartype ="decimal"+"("+substr(x,1,1)+",0)"
+.       ELSEIF (SUBSTR(tvar(nrec),1,1)="D") 
+.        tvartype ="date"
+C .        WRITE avar(nrec), tvartype, tvar(nrec)
+.       ELSEIF (SUBSTR(tvar(nrec),1,1)="T") 
+.        tvartype ="time"
+C .        WRITE avar(nrec), tvartype, tvar(nrec)
+.       ELSE
+.        compute SKIPFLAG=1
+.      ENDIF      
+.      nv = nvars(NREC)
+c      schema_data.sql
+.      IFTHEN (SKIPFLAG=0) 
+.        IFTHEN (NVAR < nv)
+.          wrstring =' "'+avar(nrec)+'" '+tvartype+' ,'
+.          write (OUTFILE) wrstring
+.         ELSE
+.          wrstring =' "'+avar(nrec)+'" '+tvartype
+.          write (OUTFILE) wrstring
+.        ENDIF
+.      ELSE
+.          WRITE nrec, avar(nrec), tvartype
+.      ENDIF
+
+c      schema_metadata.sql
+.      IFTHEN (SKIPFLAG=0) 
+.       IFTHEN (NVAR < nv)
+.         wrstring2 =' "'+avar(nrec)+'" '+"JSON,"
+.         write (OUTFILE2) wrstring2
+.        ELSE
+.         wrstring2 =' "'+avar(nrec)+'" '+"JSON"
+.         write (OUTFILE2) wrstring2
+.       ENDIF
+.      ENDIF
+
+
+c      setup itemname
+c      { itemname:avar(nrec)
+.      itemname=LOWER(avar(nrec))
+.      jitemname=quote+'itemname'+quote+colon+quote+itemname+quote+comma
+
+c      setup displaylabel
+c      { displaylabel:varlab(avar(nrec))
+.      displaylabel=varlabsc(nrec,avar(nrec))
+.      jdisplaylabel=" "+quote+'displaylabel'+quote+colon+quote+displaylabel+quote+comma
+
+c      setup category
+.      jcategory=" "+quote+'category'+quote+colon+stbracket
+
+c      get variable value labels and values
+c      setup categoryindex
+.      categoryindex=""
+.      jcategoryindex=""
+.      vt=vtype(nrec,avar(nrec))
+.      z=0
+.      IFTHEN (VT GT 0)
+.        z=nvallab(nrec,avar(nrec))
+.        for v=1,z,1
+.         ifthen (v=1)
+.           categoryindex=categoryindex+quote+vallabsv(nrec,avar(nrec),v)+quote
+.         else
+.           categoryindex=categoryindex+comma+quote+vallabsv(nrec,avar(nrec),v)+quote
+.         endif
+.        end for
+c .      if ((avar(nrec))="PRELCM") write categoryindex
+.      jcategoryindex=quote+"index"+quote+colon+"["+categoryindex+"]"+comma
+.      ELSE
+.      ENDIF
+
+c      setup missingvalues
+.      missingvalues=""
+.      jmissingvalues=""
+.      vt=vtype(nrec,avar(nrec))
+.      z=0
+.      IFTHEN (VT GT 0)
+.        z=nvallab(nrec,avar(nrec))
+.        for v=1,z,1
+.        m=miss(nrec,avar(nrec),1)
+.        n=miss(nrec,avar(nrec),2)
+.        o=miss(nrec,avar(nrec),3)
+.        ifthen ( (m eq (vallabsv(nrec,avar(nrec),v) ) ) or (n eq (vallabsv(nrec,avar(nrec),v) ) ) or (o eq (vallabsv(nrec,avar(nrec),v) ) ) )
+.         ifthen (v=1)
+.           missingvalues=missingvalues+quote+vallabsv(nrec,avar(nrec),v)+quote
+.         else
+.           missingvalues=missingvalues+comma+quote+vallabsv(nrec,avar(nrec),v)+quote
+.         endif
+c .         if ((avar(nrec))="PRELCM") write missingvalues, m, n o
+.        endif
+.        end for
+.      jmissingvalues=quote+"missing"+quote+colon+"["+missingvalues+"]"+comma
+
+.      ENDIF
+
+c      setup categorylabel
+
+.      categorylabel=""
+.      jcategorylabel=""
+.      vt=vtype(nrec,avar(nrec))
+.      z=0
+.      IFTHEN (VT GT 0)
+.        z=nvallab(nrec,avar(nrec))
+.        for v=1,z,1
+.         ifthen (v=1)
+.           categorylabel=categorylabel+quote+vallabsv(nrec,avar(nrec),v)+quote+colon+quote+trimrl(vallabsc(nrec,avar(nrec),vallabsv(nrec,avar(nrec),v)))+quote
+.         else
+.           categorylabel=categorylabel+comma+quote+vallabsv(nrec,avar(nrec),v)+quote+colon+quote+trimrl(vallabsc(nrec,avar(nrec),vallabsv(nrec,avar(nrec),v)))+quote
+.         endif
+c .        if ((avar(nrec))="PRELCM") write categorylabel
+.        end for
+.      jcategorylabel=quote+"label"+quote+colon+stbracket+categorylabel+endbracket
+.      ELSE
+.      ENDIF
+
+c      	setup note
+
+c 	set up question information stub
+.      wrstring3b=""
+
+.      sourceqstn=quote+"qstname"+quote+colon+quote+quote+comma
+.      qstlit=quote+"qstlit"+quote+colon+quote+quote+comma
+.      qstcat=quote+"qstcat"+quote+colon+stbracket+quote+"index"+quote+colon+"[]"+comma+quote+"missing"+quote+colon+"[]"+comma+quote+"label"+quote+colon+stbracket+endbracket+endbracket+comma
+.      qstvar=quote+"qstvar"+quote+colon+stbracket+quote+"index"+quote+colon+stbracket+endbracket+endbracket
+.      wrstring3b=sourceqstn+qstlit+qstcat+qstvar
+
+.      wrstring3=""
+.      wrstring3a=""
+.      wrstring3t=""
+.      wrstring3ta=""
+
+.      IFTHEN (SKIPFLAG=0) 
+.       wrstring3t=stbracket+jitemname+jdisplaylabel+jcategory+jcategoryindex
+.       wrstring3=REGREP(wrstring3t,"'","''",1,1)
+.       wrstring3ta=jmissingvalues+jcategorylabel+endbracket+comma
+.       wrstring3a=REGREP(wrstring3ta,"'","''",1,1)
+.       
+.       IFTHEN (NVAR < nv)
+.         write (OUTFILE3) " ", "'", wrstring3, wrstring3a, wrstring3b, endbracket, "'", comma
+.       ELSE
+.         write (OUTFILE3) " ", "'", wrstring3, wrstring3a, wrstring3b, endbracket, "'" 
+.       ENDIF
+.      ENDIF
+
+.    END FOR
+
+c     schema_data.sql
+.     WRITE(OUTFILE) ");"
+.     WRITE(OUTFILE) ""
+.     WRITE(OUTFILE) ""
+
+c     schema_metadata.sql
+.     WRITE(OUTFILE2) ");"
+.     WRITE(OUTFILE2) ""
+.     WRITE(OUTFILE2) ""
+
+c     schema_data.sql
+.     wrstring=""
+.     primary=keyname(nrec,1)
+.     IFTHEN (EXISTS(SECONDARY)=1) 
+.       wrstring ='ALTER TABLE "'+rname+'"'+' ADD PRIMARY KEY ('+'"'+PRIMARY+'"'+SECONDARY+');' 
+.     ELSE
+.       wrstring ='ALTER TABLE "'+rname+'"'+' ADD PRIMARY KEY ('+'"'+PRIMARY+'"'+');' 
+.     ENDIF
+.     write (OUTFILE) wrstring
+.     WRITE(OUTFILE) ""
+.     WRITE(OUTFILE) ""
+
+c    metadata.sql
+.     WRITE(OUTFILE3) ");"
+.     WRITE(OUTFILE3) ""
+
+
+c     add_data.sql
+.     IFTHEN (SKIPFLAG=0) 
+.       wrstring4 ="COPY INTO "+rname+" FROM "+"'$PATH"+rname+".dat'"+"  NULL AS '';"
+.       write (OUTFILE4) wrstring4
+.     ENDIF
+
+
+.   END IF
+
+. END FOR
+
+end program
+
+c Production of the retrievals should be integrated into the program above
+
+c RETRIEVAL /PROGRESS
+c . PROCESS CASES ALL
+c .   AUTOSET
+c .   GET VARS MCSID
+c .   PROCESS RECORD mcs5_cm_self_completion
+c .    GET VARS all
+c .     PERFORM PROCS
+c .   END PROCESS RECORD
+c . END PROCESS CASES
+c 
+c CSV SAVE FILE
+c     FILENAME = "G:\DB\admin\sir\monetdb\mcs\mcs5_cm_self_completion.dat"
+c        VARIABLES = ALL                    
+c        SEPARATOR="|"
+c END RETRIEVAL
+
