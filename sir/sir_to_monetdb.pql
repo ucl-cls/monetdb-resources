@@ -14,7 +14,8 @@ c    import breaks as NULL = '' which the terminatomg EOL \n splats
 c c. Where there is a missing value declared but NO LABEL this breaks as we loop
 c    over the Labels - looping over the values might be a better idea
 c d. Write out var docs to a notes field
-c e.  Production of the retrievals should be integrated into the program 
+c e. Production of the retrievals should be integrated into the program 
+c f. Extend the program to manage CASELESS databases
 c -----------------------------------------------------------------------------
 
 global NSLOTS=2500
