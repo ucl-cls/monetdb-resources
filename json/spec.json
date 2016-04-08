@@ -1,0 +1,50 @@
+{
+	"_comment": "Name of the variable",
+	"itemname": "PRESENT",
+	"_comment": "Version of this document structure",
+	"versionmap": "1.0",
+	"_comment": "Date the JSON document was updated YYY-MM-DD",
+	"updated": "2016-04-08",
+	"displaylabel": "Present at MCS1",
+	"category": {
+		"index": ["-1", "0", "1", "2", "3", "4", "5"],
+		"missing": ["-1"],
+		"label": {
+			"-1": "No family interview",
+			"0": "Not present",
+			"1": "Yes",
+			"2": "Left",
+			"3": "Died",
+			"4": "Never in HH",
+			"5": "Not known"
+		}
+	},
+	"notes": "This variable is excellent",
+	"qstname": "PRES",
+	"qstlit": "Can you tell me whether [^personname] lives here?",
+	"qstcat": {
+		"index": ["0", "1", "2", "3", "4", "5"],
+		"missing": [],
+		"label": {
+			"0": "Not present",
+			"1": "Yes",
+			"2": "Left",
+			"3": "Died",
+			"4": "Never in HH",
+			"5": "Not known"
+
+		}
+	},
+	"_comment": "Holds information on the mapping between codes in qstcat and category",
+	"qstvar": {
+		"index": {
+			"0": "0",
+			"1": "1",
+			"2": "2",
+			"3": "3",
+			"4": "4",
+			"5": "5"
+		}
+
+	}
+}
